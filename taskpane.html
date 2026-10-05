@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>XLSnip</title>
+<script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+<style>
+:root{--g:#217346;--bd:#d0d0d0;--bg:#fff;--tx:#222}
+@media(prefers-color-scheme:dark){:root{--bd:#555;--bg:#1e1e1e;--tx:#eee}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;font:13px Segoe UI,system-ui,sans-serif;background:var(--bg);color:var(--tx)}
+body{display:flex;flex-direction:column}
+.bar{display:flex;gap:6px;align-items:center;padding:5px 6px;border-bottom:1px solid var(--bd);flex-wrap:wrap}
+button,select{font:inherit;padding:4px 8px;border:1px solid var(--bd);background:transparent;color:inherit;border-radius:4px;cursor:pointer}
+button.p{background:var(--g);color:#fff;border-color:var(--g)}
+.seg button{border-radius:0}.seg button:first-child{border-radius:4px 0 0 4px}.seg button:last-child{border-radius:0 4px 4px 0}
+.seg button.on{background:var(--g);color:#fff;border-color:var(--g)}
+#docs{flex:1;min-width:80px;max-width:100%}
+#view{flex:1;overflow:auto;background:#808080;padding:8px;position:relative}
+#wrap{position:relative;display:inline-block;background:#fff;box-shadow:0 1px 6px #0006}
+#ov{position:absolute;inset:0;cursor:crosshair;touch-action:none}
+.sel{position:absolute;border:2px solid #d83b01;background:#d83b0122;pointer-events:none}
+.mark{position:absolute;border:1px solid var(--g);background:#21734622;pointer-events:none}
+.mark.ok{border-color:#00a000;background:#00c85033}.mark.nok{border-color:#c00000;background:#ff000033}
+.mark.f{border:2px solid #0078d4;background:#0078d433}
+#st{padding:4px 8px;font-size:12px;border-top:1px solid var(--bd);min-height:24px}
+#empty{color:#fff;padding:20px;text-align:center}
+label{display:flex;align-items:center;gap:3px;white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="bar">
+  <button class="p" id="imp">+ Importer</button>
+  <input type="file" id="file" accept=".pdf,image/*" multiple hidden>
+  <select id="docs"></select>
+  <button id="del" title="Retirer ce document du classeur">🗑</button>
+</div>
+<div class="bar">
+  <div class="seg" id="modes">
+    <button data-m="text" class="on" title="Récupère le texte de la zone">Texte</button><button data-m="num" title="Récupère un nombre">Nombre</button><button data-m="table" title="Récupère un tableau">Tableau</button><button data-m="ok" title="Pointer comme valide (✓ vert)">✓ Valide</button><button data-m="nok" title="Pointer comme invalide (✗ rouge)">✗ Invalide</button>
+  </div>
+  <label><input type="checkbox" id="hl" checked>Surligner</label>
+  <label><input type="checkbox" id="follow" checked>Suivre la source</label>
+</div>
+<div class="bar">
+  <button id="prev">◀</button><span id="pn">–</span><button id="next">▶</button>
+  <button id="zo">−</button><button id="zi">+</button><button id="fit">Ajuster</button>
+</div>
+<div id="view">
+  <div id="empty">Importez un PDF ou une image (bouton « + Importer »).<br>Puis sélectionnez une cellule Excel et tracez une zone sur le document.</div>
+  <div id="wrap" hidden><canvas id="cv"></canvas><div id="ov"></div></div>
+</div>
+<div id="st">Prêt.</div>
+<script src="taskpane.js"></script>
+</body>
+</html>
