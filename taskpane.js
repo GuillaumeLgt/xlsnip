@@ -659,6 +659,30 @@ $('dup').onclick = async () => {
 })();
 
 
+/* ---------- Initialisation du complément ---------- */
+let APP_READY = false;
+async function initXLSnip() {
+  try {
+    say('Chargement des documents…');
+    await loadAll();
+    fillDocs();
+    renderOrgTree();
+    APP_READY = true;
+    say(S.docs.length ? `${S.docs.length} document(s) chargé(s). Prêt.` : 'Prêt. Aucun document importé.');
+  } catch (e) {
+    console.error('XLSnip initialisation', e);
+    say(`Impossible de charger les documents : ${e.message || e}`);
+  }
+}
+if (typeof Office !== 'undefined' && Office.onReady) {
+  Office.onReady(info => {
+    if (info && info.host && info.host !== Office.HostType.Excel) { say('XLSnip doit être utilisé dans Excel.'); return; }
+    initXLSnip();
+  });
+} else {
+  window.addEventListener('load', initXLSnip);
+}
+
 /* ---------- Organisation des documents ---------- */
 async function saveFolders() {
   await Excel.run(async c => {
@@ -671,26 +695,46 @@ function folderById(id){ return S.folders.find(f=>f.id===id) || S.folders[0]; }
 function folderChildren(id){ return S.folders.filter(f=>f.parent===id); }
 function renderOrgTree(){
   const root=$('orgTree'); if(!root)return; root.innerHTML='';
+  if(!S.folders.length) S.folders=[{id:'root',name:'Documents',parent:null}];
   const walk=(id,depth)=>{
     const f=folderById(id); if(!f)return;
     const docs=S.docs.filter(d=>(d.folder||'root')===id);
+    const children=folderChildren(id);
     const el=document.createElement('div'); el.className='orgItem'+(S.orgSel===id?' sel':''); el.style.paddingLeft=(7+depth*18)+'px';
     el.innerHTML=`<span class="ico">📁</span><span class="orgName">${esc(f.name)}</span><span class="orgCount">${docs.length}</span>`;
     el.onclick=()=>{S.orgSel=id;renderOrgTree()}; root.appendChild(el);
-    docs.forEach(d=>{ const de=document.createElement('div'); de.className='orgItem orgDoc'; de.style.paddingLeft=(28+depth*18)+'px'; de.innerHTML=`<span class="ico">📄</span><span class="orgName">${esc(d.name)}</span>`; de.onclick=()=>{S.orgSel=id;openDoc(d.id);renderOrgTree()}; root.appendChild(de); });
-    folderChildren(id).forEach(c=>walk(c.id,depth+1));
+    docs.forEach(d=>{
+      const de=document.createElement('div'); de.className='orgItem orgDoc'; de.style.paddingLeft=(28+depth*18)+'px';
+      de.innerHTML=`<span class="ico">📄</span><span class="orgName">${esc(d.name)}</span><span class="orgCount">${fmtSize(d.data.length)}</span>`;
+      de.onclick=()=>{S.orgSel=id;openDoc(d.id);renderOrgTree()}; root.appendChild(de);
+    });
+    children.forEach(c=>walk(c.id,depth+1));
   };
   walk('root',0);
+  if(!S.docs.length){const e=document.createElement('div');e.className='muted';e.style.padding='12px 8px';e.textContent='Aucun document importé. Utilisez « Importer ici » pour ajouter un PDF ou une image.';root.appendChild(e);}
 }
 async function renameFolder(){ const f=folderById(S.orgSel); if(!f||f.id==='root')return say('Le dossier racine ne peut pas être renommé.'); const n=prompt('Nouveau nom du dossier',f.name); if(!n||!n.trim())return; f.name=n.trim(); await saveFolders(); renderOrgTree(); }
 async function newFolder(parent){ const name=prompt('Nom du dossier'); if(!name||!name.trim())return; const id='f'+newId(); S.folders.push({id,name:name.trim(),parent}); S.orgSel=id; await saveFolders(); renderOrgTree(); }
 async function deleteFolder(){ const f=folderById(S.orgSel); if(!f||f.id==='root')return; if(folderChildren(f.id).length||S.docs.some(d=>(d.folder||'root')===f.id))return say('Le dossier doit être vide avant suppression.'); S.folders=S.folders.filter(x=>x.id!==f.id); S.orgSel=f.parent||'root'; await saveFolders(); renderOrgTree(); }
 async function moveCurrentToFolder(){ if(!S.cur)return; const f=folderById(S.orgSel); S.cur.folder=f.id; await rewriteDoc(S.cur); fillDocs(); renderOrgTree(); say(`« ${S.cur.name} » déplacé dans « ${f.name} ».`); }
 async function rewriteDoc(d){ await Excel.run(async c=>{ const old=d.pid; const xml=`<d xmlns="${NS_DOC}" id="${d.id}" name="${esc(d.name)}" folder="${esc(d.folder||'root')}" wf="json"><f>${b64(d.data)}</f><w>${escT(JSON.stringify(d.words))}</w></d>`; const p=c.workbook.customXmlParts.add(xml); p.load('id'); await c.sync(); c.workbook.customXmlParts.getItem(old).delete(); await c.sync(); d.pid=p.id; }); }
-$('orgBtn').onclick=()=>{$('orgModal').hidden=false;renderOrgTree()}; $('orgClose').onclick=()=>{$('orgModal').hidden=true};
-$('orgNewFolder').onclick=()=>newFolder('root'); $('orgNewSub').onclick=()=>newFolder(S.orgSel||'root'); $('orgRename').onclick=renameFolder; $('orgDelete').onclick=deleteFolder;
-$('orgImport').onclick=()=>$('orgFile').click(); $('orgMove').onclick=moveCurrentToFolder;
-$('orgFile').onchange=async e=>{const target=S.orgSel||'root'; for(const f of e.target.files){try{await importFile(f); S.cur.folder=target; await rewriteDoc(S.cur);}catch(err){say(`Échec de l'import : ${err.message}`)}} e.target.value=''; renderOrgTree(); fillDocs()};
+$('orgBtn').onclick=async()=>{
+  $('orgModal').hidden=false;
+  renderOrgTree();
+  if(!APP_READY){ await initXLSnip(); renderOrgTree(); }
+};
+$('orgClose').onclick=()=>{$('orgModal').hidden=true};
+$('orgNewFolder').onclick=async()=>{try{await newFolder('root')}catch(e){say(`Erreur : ${e.message||e}`)}};
+$('orgNewSub').onclick=async()=>{try{await newFolder(S.orgSel||'root')}catch(e){say(`Erreur : ${e.message||e}`)}};
+$('orgRename').onclick=async()=>{try{await renameFolder()}catch(e){say(`Erreur : ${e.message||e}`)}};
+$('orgDelete').onclick=async()=>{try{await deleteFolder()}catch(e){say(`Erreur : ${e.message||e}`)}};
+$('orgImport').onclick=()=>{ if(!APP_READY){say('Le chargement n’est pas terminé.'); return;} $('orgFile').click(); };
+$('orgMove').onclick=async()=>{try{await moveCurrentToFolder()}catch(e){say(`Erreur : ${e.message||e}`)}};
+$('orgFile').onchange=async e=>{
+  const target=S.orgSel||'root'; const files=[...e.target.files]; e.target.value='';
+  for(const f of files){try{await importFile(f); if(S.cur){S.cur.folder=target; await rewriteDoc(S.cur);}}catch(err){say(`Échec de l'import de « ${f.name} » : ${err.message}`)}}
+  renderOrgTree(); fillDocs();
+};
 
 /* ---------- Document Matching : moteur de rapprochement multi-signaux ---------- */
 const cleanText=s=>normSearch(String(s??'')).replace(/\s+/g,' ').trim();
