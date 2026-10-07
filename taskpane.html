@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>XLSnip – Fiduciaire de Franche-Comté</title>
+<script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+<script src="vendor/pdfjs/pdf.min.js"></script>
+<script src="vendor/jspdf/jspdf.umd.min.js"></script>
+<script src="vendor/tesseract/tesseract.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* Typographie de la charte : Urbane. Déposez les fichiers dans /fonts pour l'activer (sinon Montserrat, très proche). */
+@font-face{font-family:'Urbane';font-weight:400;src:url('fonts/Urbane-Regular.woff2') format('woff2')}
+@font-face{font-family:'Urbane';font-weight:600;src:url('fonts/Urbane-DemiBold.woff2') format('woff2')}
+@font-face{font-family:'Urbane';font-weight:700;src:url('fonts/Urbane-Bold.woff2') format('woff2')}
+
+:root{
+  --pri:#4f5fa7;      /* indigo  – charte */
+  --blue:#3f97d3;     /* bleu    – charte */
+  --gold:#deba4d;     /* or      – charte */
+  --grad:linear-gradient(135deg,#3f97d3 0%,#4f5fa7 100%);
+  --bg:#f3f5fb;--panel:#fff;--soft:#e9ecf6;--bd:#d9deee;--ink:#242b4d;--mute:#6b7399;--view:#dde1ef;
+  --ok:#2e9e5b;--nok:#c9434a;--title:#4f5fa7;
+}
+@media(prefers-color-scheme:dark){
+  :root{--bg:#161a2d;--panel:#1f2440;--soft:#2a3052;--bd:#363d66;--ink:#e9ecf8;--mute:#a4abd0;--view:#10132a;--title:#9db9f2}
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0}
+body{display:flex;flex-direction:column;font:13px/1.35 'Urbane','Montserrat','Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+
+/* ---- Zone d'outils repliable + séparateur ---- */
+#tools{flex:none;overflow-y:auto;overflow-x:hidden;scrollbar-width:thin}
+#grip{position:relative;z-index:5;flex:none;height:12px;cursor:ns-resize;display:grid;place-items:center;background:var(--bg);border-top:1px solid var(--bd);border-bottom:1px solid var(--bd);touch-action:none;user-select:none}
+#grip::before{content:"";position:absolute;left:0;right:0;top:-6px;bottom:-6px}
+#grip::after{content:"";width:56px;height:4px;border-radius:2px;background:var(--bd);transition:background .15s}
+#grip:hover,#grip.drag{background:#3f97d322}
+#grip:hover::after,#grip.drag::after,#grip:focus-visible::after{background:var(--blue)}
+#grip:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
+body.dragging{cursor:ns-resize;user-select:none}
+#lg .chev{transition:transform .15s}#lg[aria-expanded=true] .chev{transform:rotate(180deg)}
+/* ---- En-tête avec logo ---- */
+.top{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 12px;background:#fff;border-bottom:3px solid var(--gold)}
+.top .logo{height:36px;width:auto;display:block}
+.top .app{display:flex;flex-direction:column;align-items:flex-end;line-height:1.1}
+.top .app b{font-size:15px;letter-spacing:.3px;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.top .app span{font-size:10px;color:#6b7399;text-transform:uppercase;letter-spacing:.8px}
+
+/* ---- Barres d'outils ---- */
+.bar{display:flex;gap:6px;align-items:center;padding:7px 10px;flex-wrap:wrap;background:var(--panel);border-bottom:1px solid var(--bd)}
+.bar.alt{background:var(--bg)}
+.lbl{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:var(--mute);margin-right:2px}
+button,select,#pg{font:inherit;color:inherit}
+button{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--bd);background:var(--panel);border-radius:8px;cursor:pointer;transition:border-color .15s,color .15s,box-shadow .15s,background .15s}
+button:hover:not(:disabled){border-color:var(--blue);color:var(--title);box-shadow:0 1px 4px #3f97d333}
+button:active:not(:disabled){transform:translateY(1px)}
+button:disabled{opacity:.5;cursor:default}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
+button.p{background:var(--grad);border-color:transparent;color:#fff;font-weight:600}
+button.p:hover:not(:disabled){color:#fff;box-shadow:0 2px 8px #4f5fa766}
+button.ghost{padding:5px 8px}
+select{padding:5px 8px;border:1px solid var(--bd);border-radius:8px;background:var(--panel)}
+.docpick{display:flex;gap:6px;flex:1 1 240px;min-width:0}
+#docFolder{flex:0 1 42%;min-width:84px;max-width:100%}
+#docs{flex:1 1 58%;min-width:90px;max-width:100%}
+.i{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+label{display:flex;align-items:center;gap:5px;white-space:nowrap;cursor:pointer}
+input[type=checkbox]{accent-color:var(--pri);width:14px;height:14px}
+
+/* ---- Modes ---- */
+.seg{display:flex;flex-wrap:wrap;gap:3px;padding:3px;background:var(--soft);border-radius:11px;width:100%}
+.seg button{flex:1 1 auto;justify-content:center;border:0;background:transparent;padding:6px 8px;border-radius:8px;font-weight:500}
+.seg button:hover:not(:disabled){background:var(--panel);box-shadow:none}
+.seg button.on{background:var(--grad);color:#fff;font-weight:600;box-shadow:0 1px 5px #4f5fa755}
+.seg button[data-m=ok].on{background:var(--ok)}
+.seg button[data-m=nok].on{background:var(--nok)}
+.opts{display:flex;gap:14px;flex-wrap:wrap;padding:2px 2px 0;width:100%;color:var(--mute)}
+
+/* ---- Navigation (bandeau compact) ---- */
+.navbar{padding:3px 8px;gap:4px}
+.navbar button{padding:2px 7px;min-height:26px;border-radius:7px}
+.navbar #pg{height:26px;padding:0 2px;border-radius:7px}
+.navbar .i{width:14px;height:14px}
+.nav{display:flex;align-items:center;gap:4px}
+#pg{width:56px;padding:4px;border:1px solid var(--bd);border-radius:8px;background:var(--panel);text-align:center}
+#pn{color:var(--mute);min-width:34px}
+#searchBox{display:flex;align-items:center;gap:3px;min-width:0;flex:1 1 150px}
+#search{height:26px;min-width:70px;width:100%;padding:2px 7px;border:1px solid var(--bd);border-radius:7px;background:var(--panel);color:var(--ink)}
+#searchCount{font-size:10px;color:var(--mute);white-space:nowrap;min-width:42px;text-align:center}
+#searchPrev,#searchNext{padding:2px 5px;min-height:26px}
+.searchMark{position:absolute;border:2px solid var(--gold);background:#deba4d66;border-radius:2px;pointer-events:none;z-index:2}
+.searchMark.current{border-color:var(--blue);background:#3f97d388;box-shadow:0 0 0 2px #3f97d355}
+.sp{flex:1}
+
+/* ---- Visionneuse ---- */
+#view{flex:1;min-height:120px;overflow:auto;background:var(--view);padding:12px;position:relative}
+#wrap{position:relative;display:block;width:max-content;margin:0 auto;background:#fff;box-shadow:0 2px 14px #1b225033,0 0 0 1px #0001;border-radius:2px}
+#ov{position:absolute;inset:0;cursor:crosshair;touch-action:none}
+.sel{position:absolute;border:2px dashed var(--pri);background:#4f5fa722;pointer-events:none}
+.mark{position:absolute;border:1.5px solid var(--blue);background:#3f97d333;border-radius:2px;pointer-events:none}
+.mark.ok{border-color:var(--ok);background:#2e9e5b33}
+.mark.nok{border-color:var(--nok);background:#c9434a33}
+.mark.f{border:2px solid var(--gold);background:#deba4d55;box-shadow:0 0 0 3px #deba4d55}
+#empty{max-width:290px;margin:10px auto;padding:20px 18px;text-align:center;background:var(--panel);border-radius:14px;border-top:3px solid var(--gold);box-shadow:0 2px 12px #1b225022}
+#empty img{height:58px;margin-bottom:6px}
+#empty h2{margin:4px 0 10px;font-size:15px;color:var(--title)}
+#empty ol{margin:0;padding:0;list-style:none;counter-reset:s;text-align:left}
+#empty li{counter-increment:s;display:flex;gap:9px;align-items:flex-start;margin:7px 0;color:var(--ink)}
+#empty li::before{content:counter(s);flex:none;width:20px;height:20px;border-radius:50%;background:var(--grad);color:#fff;font-size:11px;font-weight:700;display:grid;place-items:center}
+
+/* ---- Statut ---- */
+#st{display:flex;align-items:center;gap:8px;padding:6px 12px;font-size:12px;min-height:30px;border-top:1px solid var(--bd);background:var(--panel);color:var(--ink)}
+#st::before{content:"";flex:none;width:8px;height:8px;border-radius:50%;background:var(--gold)}
+
+/* ---- Fenêtre de dialogue ---- */
+#modal,#orgModal,#matchModal{position:fixed;inset:0;background:#141a3c99;backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;z-index:20}
+.box{background:var(--panel);color:var(--ink);border-radius:14px;width:min(350px,93%);max-height:92%;overflow:auto;box-shadow:0 10px 40px #0006;border-top:4px solid var(--gold);padding:14px 16px}
+.box h3{margin:0 0 8px;font-size:15px;color:var(--title)}
+.box p{margin:7px 0}
+.box ul{margin:6px 0;padding-left:18px}
+.row{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
+.gtools{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 10px}
+.gl{max-height:170px;overflow:auto;border:1px solid var(--bd);border-radius:8px;padding:4px 8px;margin:6px 0;background:var(--bg)}
+.gl label{white-space:normal;padding:4px 0;align-items:flex-start}
+
+/* ---- Menu contextuel ---- */
+#cm{position:fixed;display:none;z-index:9;background:var(--panel);border:1px solid var(--bd);border-radius:10px;box-shadow:0 6px 22px #0004;padding:4px;min-width:210px}
+#cm button{display:block;width:100%;text-align:left;border:0;background:transparent;padding:7px 10px;border-radius:7px;box-shadow:none}
+#cm button:hover{background:var(--grad);color:#fff}
+
+/* ---- Document Matching / Organisation ---- */
+#orgBtn,#matchBtn{padding:5px 9px}
+.orgTree{border:1px solid var(--bd);border-radius:10px;padding:6px;background:var(--bg);max-height:330px;overflow:auto}
+.orgItem{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  width:100%;
+  min-height:30px;
+  height:30px;
+  margin:0;
+  padding:5px 7px;
+  box-sizing:border-box;
+  line-height:20px;
+  border-radius:7px;
+  cursor:pointer;
+  user-select:none;
+  position:relative;
+  overflow:hidden;
+}
+.orgItem:hover{background:var(--soft)}
+.orgItem.sel{background:#3f97d322;outline:1px solid #3f97d355}
+.orgItem .indent{width:14px;flex:none}
+.orgItem .ico{width:18px;min-width:18px;text-align:center;flex:none}
+.orgName{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.orgCount{flex:none;font-size:10px;color:var(--mute);margin-left:4px}
+.orgDocs{
+  display:flex;
+  flex-direction:column;
+  width:100%;
+  margin:0;
+  padding:0;
+  gap:1px;
+}
+.orgDoc{
+  display:flex;
+  min-height:30px;
+  height:30px;
+  box-sizing:border-box;
+  padding-top:5px;
+  padding-bottom:5px;
+}
+.orgDoc.selDoc{background:#deba4d33;outline:1px solid #deba4d88}
+.orgItem.orgDropTarget{
+  background:#3f97d322 !important;
+  outline:2px dashed #3f97d3 !important;
+}
+.orgDoc[draggable="true"]{cursor:grab}
+.orgDoc.orgDragging{
+  opacity:.45;
+  transform:scale(.99);
+}
+.orgDragGhost{
+  position:fixed;
+  z-index:99999;
+  pointer-events:none;
+  max-width:360px;
+  padding:7px 10px;
+  border:1px solid #3f97d3;
+  border-radius:7px;
+  background:#fff;
+  box-shadow:0 5px 18px #0002;
+  font-size:12px;
+  color:#39445c;
+}
+
+.orgDoc[draggable="true"]:active{cursor:grabbing}
+
+.orgActions{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px}
+.modalWide{width:min(680px,96%);max-height:94%}
+.modalXL{width:min(820px,97%);max-height:95%}
+.matchStep{display:none}.matchStep.on{display:block}
+.matchGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.matchBox{border:1px solid var(--bd);border-radius:10px;padding:10px;background:var(--bg)}
+.matchBox h4{margin:0 0 7px;color:var(--title);font-size:12px}
+.matchList{max-height:230px;overflow:auto;border:1px solid var(--bd);border-radius:8px;background:var(--panel)}
+.matchList label{padding:6px 8px;border-bottom:1px solid var(--bd);white-space:normal}
+.matchList label:last-child{border-bottom:0}
+.matchFields{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.matchField{display:flex;flex-direction:column;gap:4px}.matchField small{color:var(--mute)}
+.matchField select,.matchField input{width:100%;padding:6px 7px;border:1px solid var(--bd);border-radius:7px;background:var(--panel);color:var(--ink)}
+.matchResults{max-height:360px;overflow:auto;border:1px solid var(--bd);border-radius:8px}
+.matchResult{display:grid;grid-template-columns:42px 1fr auto;gap:8px;align-items:center;padding:7px 8px;border-bottom:1px solid var(--bd)}
+.matchResult:last-child{border-bottom:0}.matchResult .score{font-weight:700}.matchResult .src{min-width:0}.matchResult .src b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.matchResult .src span{font-size:10px;color:var(--mute)}
+.badge{font-size:10px;border-radius:10px;padding:2px 6px;background:var(--soft);white-space:nowrap}
+.steps{display:flex;gap:6px;margin-bottom:10px}.steps span{padding:4px 8px;border-radius:12px;background:var(--soft);font-size:10px}.steps span.on{background:#3f97d322;color:var(--title);font-weight:700}.rangeTools{display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:start}.rangeTools .fullInput{margin-bottom:0}.rangeTools button{white-space:nowrap}.fullInput{width:100%;box-sizing:border-box;padding:7px;border:1px solid var(--bd);border-radius:7px;background:var(--panel);color:var(--ink);margin-bottom:8px}.muted{font-size:10px;color:var(--mute);display:block;margin-top:7px}.matchField{padding:7px;border:1px solid var(--bd);border-radius:8px}.matchField label{font-size:10px}.matchField small{display:block;margin-bottom:3px}.matchEvidence{position:absolute;background:#b5ff0080;border:2px solid #9acd00;border-radius:2px;pointer-events:none;z-index:8}.badge.ok{background:#2e9e5b22;color:var(--ok)}.badge.warn{background:#deba4d33}
+</style>
+</head>
+<body>
+
+<div id="tools">
+<header class="top">
+  <img class="logo" src="logo.png" alt="Fiduciaire de Franche-Comté – Expertise comptable, Commissariat aux comptes">
+  <div class="app"><b>XLSnip</b><span>Extraction de données · v2026.10.07c</span></div>
+</header>
+
+<div class="bar">
+  <button class="p" id="imp" title="Importer un PDF ou une image">
+    <svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Importer</button>
+  <input type="file" id="file" accept=".pdf,image/*" multiple hidden>
+  <div class="docpick">
+    <select id="docFolder" aria-label="Dossier" title="Dossier d'où proviennent les documents de la liste"></select>
+    <select id="docs" aria-label="Document" title="Document"></select>
+  </div>
+  <button class="ghost" id="orgBtn" title="Organiser les documents">Organisation</button>
+  <button class="ghost" id="matchBtn" title="Lancer un rapprochement automatique">Document Matching</button>
+  <button class="ghost" id="del" title="Retirer ce document du classeur" aria-label="Retirer le document">
+    <svg class="i" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg></button>
+</div>
+
+<div class="bar alt">
+  <label><input type="checkbox" id="hl" checked>Surligner</label>
+  <label><input type="checkbox" id="follow" checked>Suivre la source</label>
+  <span class="sp"></span>
+  <button class="ghost" id="lg" aria-expanded="false" title="Afficher / masquer les outils d'allègement du fichier">Alléger
+    <svg class="i chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+</div>
+
+<div class="bar alt" id="alg" hidden>
+  <button id="cmp" title="Compresser les documents intégrés au classeur">
+    <svg class="i" viewBox="0 0 24 24"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></svg>Compresser</button>
+  <button id="gray" title="Passer des documents en niveaux de gris">
+    <svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/></svg>Niveaux de gris</button>
+  <button id="dup" title="Supprimer les documents importés plusieurs fois">
+    <svg class="i" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/></svg>Doublons</button>
+</div>
+</div>
+
+<div class="bar">
+  <div class="seg" id="modes">
+    <button data-m="text" class="on" title="Récupère le texte de la zone. Avec Ctrl : ajoute à la case précédente">Texte</button><button data-m="num" title="Récupère un nombre">Nombre</button><button data-m="sum" title="Additionne les nombres de la zone. Avec Ctrl : ajoute à la case précédente">Σ Somme</button><button data-m="table" title="Récupère un tableau">Tableau</button><button data-m="img" title="Copie la zone sous forme d'image dans la cellule sélectionnée">Image</button><button data-m="ok" title="Pointer comme valide (✓ vert)">✓ Valide</button><button data-m="nok" title="Pointer comme invalide (✗ rouge)">✗ Invalide</button>
+  </div>
+</div>
+
+<div class="bar alt navbar">
+  <div class="nav">
+    <button class="ghost" id="prev" aria-label="Page précédente"><svg class="i" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+    <input type="number" id="pg" min="1" step="1" title="Aller à la page…" aria-label="Numéro de page"><span id="pn">/ –</span>
+    <button class="ghost" id="next" aria-label="Page suivante"><svg class="i" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button>
+  </div>
+  <div id="searchBox" title="Rechercher dans tous les documents">
+    <input id="search" type="search" placeholder="Rechercher…" aria-label="Rechercher dans tous les documents" autocomplete="off">
+    <span id="searchCount" aria-live="polite"></span>
+    <button class="ghost" id="searchPrev" title="Occurrence précédente" aria-label="Occurrence précédente">↑</button>
+    <button class="ghost" id="searchNext" title="Occurrence suivante" aria-label="Occurrence suivante">↓</button>
+  </div>
+  <span class="sp"></span>
+  <button class="ghost" id="zo" title="Zoom arrière" aria-label="Zoom arrière"><svg class="i" viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+  <button class="ghost" id="zi" title="Zoom avant" aria-label="Zoom avant"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+  <button id="fit" title="Ajuster à la largeur">Ajuster</button>
+</div>
+
+<div id="grip" role="separator" aria-orientation="horizontal" tabindex="0"
+     title="Glissez cette ligne vers le haut pour agrandir la visionneuse, vers le bas pour la réduire (double-clic : tout replier / rétablir)"></div>
+
+<div id="view">
+  <div id="empty">
+    <img src="logo-mark.png" alt="">
+    <h2>Aucun document</h2>
+    <ol>
+      <li><span>Cliquez sur <b>Importer</b> (PDF ou image).</span></li>
+      <li><span>Sélectionnez une cellule dans Excel.</span></li>
+      <li><span>Tracez une zone sur le document pour l'extraire.</span></li>
+    </ol>
+  </div>
+  <div id="wrap" hidden><canvas id="cv"></canvas><div id="ov"></div></div>
+</div>
+
+<div id="orgModal" hidden><div class="box modalWide"><h3>Organisation des documents</h3><div class="orgActions"><button id="orgNewFolder" class="p">Nouveau dossier</button><button id="orgNewSub">Sous-dossier</button><button id="orgRename">Renommer</button><button id="orgDelete">Supprimer</button><button id="orgImport">Importer ici</button><button id="orgMove">Déplacer le document sélectionné ici</button><input id="orgFile" type="file" accept=".pdf,image/*" multiple hidden></div><div id="orgTree" class="orgTree"></div><div class="muted" style="margin-top:6px">💡 Glissez un document sur un dossier ou un sous-dossier pour le déplacer.</div><div class="row"><span class="muted">Sélectionnez un dossier pour agir dessus.</span><button id="orgClose" class="p">Fermer</button></div></div></div>
+<div id="matchModal" hidden><div class="box modalXL"><h3>Document Matching</h3><div class="steps"><span id="matchS1" class="on">1. Données</span><span id="matchS2">2. Sources</span><span id="matchS3">3. Champs</span><span id="matchS4">4. Résultats</span></div>
+<div id="matchStep1" class="matchStep on"><div class="matchBox"><h4>Plage Excel</h4>
+<div class="rangeTools"><input id="matchRange" class="fullInput" value="" placeholder="Ex. Feuil1!A2:F100" aria-label="Plage Excel"><button id="matchPick" type="button">Prendre la sélection Excel</button><button id="matchRefresh" type="button">Actualiser</button></div>
+<p class="muted">Sélectionnez directement une plage dans Excel puis cliquez sur « Prendre la sélection Excel », ou saisissez une adresse comme <b>Feuil1!A2:F100</b>. La plage est réellement relue avant le matching.</p>
+<label><input type="checkbox" id="matchHeader" checked> La première ligne contient les en-têtes</label>
+<p class="muted">Le moteur considère chaque ligne comme un ensemble de champs appartenant à la même pièce ou transaction.</p></div></div>
+<div id="matchStep2" class="matchStep"><div class="matchBox"><h4>Documents sources</h4><div id="matchFolders" class="matchList"></div><p class="muted">Le matching recherche dans toutes les pages des documents des dossiers sélectionnés.</p></div></div>
+<div id="matchStep3" class="matchStep"><div class="matchGrid"><div class="matchBox"><h4>Champs à rapprocher</h4><div id="matchMappings" class="matchFields"></div></div><div class="matchBox"><h4>Options du moteur</h4><label><input type="checkbox" id="optFuzzy" checked> Fuzzy matching</label><label><input type="checkbox" id="optPartial" checked> Partial matching</label><label><input type="checkbox" id="optThreshold"> Exiger un score minimal pour les champs requis</label><div id="thresholdRow" hidden><label>Seuil requis <input id="thresholdVal" type="number" min="0.5" max="1" step="0.01" value="0.72"></label></div><p class="muted">Le score combine similarité des champs, correspondance numérique, proximité entre les valeurs sur la page et concentration des champs dans le même document.</p></div></div></div>
+<div id="matchStep4" class="matchStep"><div id="matchResults" class="matchResults"></div><p class="muted">Cliquez sur une ligne pour sélectionner la correspondance. Le document est alors affiché à la page retenue sans fermer cette fenêtre ; les valeurs ayant contribué au matching sont surlignées.</p></div>
+<div class="row"><button id="matchCancel">Annuler</button><button id="matchBack">Retour</button><button id="matchNext" class="p">Suivant</button></div></div></div>
+<div id="modal" hidden><div class="box"><h3 id="mt"></h3><div id="mb"></div><div class="row"><button id="mno">Annuler</button><button class="p" id="mok">Valider</button></div></div></div>
+<div id="st">Prêt.</div>
+<script src="taskpane.js?v=20261007c"></script>
+</body>
+</html>
